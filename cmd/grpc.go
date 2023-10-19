@@ -19,7 +19,7 @@ import (
 	"os"
 
 	"github.com/nalyx1/codepix/application/grpc"
-	"github.com/nalyx1/codepix/infrastructure/db"
+	"github.com/nalyx1/codepix/infra/db"
 
 	"github.com/spf13/cobra"
 )

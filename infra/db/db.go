@@ -1,89 +1,55 @@
-package usecase
+package db
 
 import (
-	"errors"
 	"log"
+	"os"
+	"path/filepath"
+	"runtime"
 
 	"github.com/nalyx1/codepix/domain/model"
+
+	"github.com/jinzhu/gorm"
+	"github.com/joho/godotenv"
+	_ "github.com/lib/pq"
+	_ "gorm.io/driver/sqlite"
 )
 
-type TransactionUseCase struct {
-	TransactionRepository model.TransactionRepositoryInterface
-	PixRepository         model.PixKeyRepositoryInterface
+func init() {
+	_, b, _, _ := runtime.Caller(0)
+	basepath := filepath.Dir(b)
+
+	err := godotenv.Load(basepath + "/../../.env")
+
+	if err != nil {
+		log.Fatalf("Error loading .env files")
+	}
 }
 
-func (t *TransactionUseCase) Register(accountId string, amount float64, pixKeyto string, pixKeyKindTo string, description string, id string) (*model.Transaction, error) {
+func ConnectDB(env string) *gorm.DB {
+	var dsn string
+	var db *gorm.DB
+	var err error
 
-	account, err := t.PixRepository.FindAccount(accountId)
+	if env != "test" {
+		dsn = os.Getenv("dsn")
+		db, err = gorm.Open(os.Getenv("dbType"), dsn)
+	} else {
+		dsn = os.Getenv("dsnTest")
+		db, err = gorm.Open(os.Getenv("dbTypeTest"), dsn)
+	}
+
 	if err != nil {
-		return nil, err
+		log.Fatalf("Error connecting to database: %v", err)
+		panic(err)
 	}
 
-	pixKey, err := t.PixRepository.FindKeyByKind(pixKeyto, pixKeyKindTo)
-	if err != nil {
-		return nil, err
+	if os.Getenv("debug") == "true" {
+		db.LogMode(true)
 	}
 
-	transaction, err := model.NewTransaction(account, amount, pixKey, description, id)
-	if err != nil {
-		return nil, err
+	if os.Getenv("AutoMigrateDb") == "true" {
+		db.AutoMigrate(&model.Bank{}, &model.Account{}, &model.PixKey{}, &model.Transaction{})
 	}
 
-	t.TransactionRepository.Save(transaction)
-	if transaction.Base.ID != "" {
-		return transaction, nil
-	}
-
-	return nil, errors.New("unable to process this transaction")
-
-}
-
-func (t *TransactionUseCase) Confirm(transactionId string) (*model.Transaction, error) {
-	transaction, err := t.TransactionRepository.Find(transactionId)
-	if err != nil {
-		log.Println("Transaction not found", transactionId)
-		return nil, err
-	}
-
-	transaction.Status = model.TransactionConfirmed
-	err = t.TransactionRepository.Save(transaction)
-	if err != nil {
-		return nil, err
-	}
-
-	return transaction, nil
-}
-
-func (t *TransactionUseCase) Complete(transactionId string) (*model.Transaction, error) {
-	transaction, err := t.TransactionRepository.Find(transactionId)
-	if err != nil {
-		log.Println("Transaction not found", transactionId)
-		return nil, err
-	}
-
-	transaction.Status = model.TransactionCompleted
-	err = t.TransactionRepository.Save(transaction)
-	if err != nil {
-		return nil, err
-	}
-
-	return transaction, nil
-}
-
-func (t *TransactionUseCase) Error(transactionId string, reason string) (*model.Transaction, error) {
-	transaction, err := t.TransactionRepository.Find(transactionId)
-	if err != nil {
-		return nil, err
-	}
-
-	transaction.Status = model.TransactionError
-	transaction.CancelDescription = reason
-
-	err = t.TransactionRepository.Save(transaction)
-	if err != nil {
-		return nil, err
-	}
-
-	return transaction, nil
-
+	return db
 }
